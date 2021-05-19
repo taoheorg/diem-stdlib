@@ -9,18 +9,18 @@ module AccountFreezing {
     use 0x1::CoreAddresses;
     use 0x1::Roles;
 
-    resource struct FreezingBit {
+    struct FreezingBit has key {
         /// If `is_frozen` is set true, the account cannot be used to send transactions or receive funds
         is_frozen: bool,
     }
 
-    resource struct FreezeEventsHolder {
+    struct FreezeEventsHolder has key {
         freeze_event_handle: EventHandle<FreezeAccountEvent>,
         unfreeze_event_handle: EventHandle<UnfreezeAccountEvent>,
     }
 
     /// Message for freeze account events
-    struct FreezeAccountEvent {
+    struct FreezeAccountEvent has drop, store {
         /// The address that initiated freeze txn
         initiator_address: address,
         /// The address that was frozen
@@ -28,7 +28,7 @@ module AccountFreezing {
     }
 
     /// Message for unfreeze account events
-    struct UnfreezeAccountEvent {
+    struct UnfreezeAccountEvent has drop, store {
         /// The address that initiated unfreeze txn
         initiator_address: address,
         /// The address that was unfrozen
@@ -117,7 +117,7 @@ module AccountFreezing {
             initiator_address: Signer::spec_address_of(account),
             frozen_address
         };
-        ////emits msg to handle;
+        emits msg to handle;
     }
 
     /// Unfreeze the account at `addr`.
@@ -154,7 +154,7 @@ module AccountFreezing {
             initiator_address: Signer::spec_address_of(account),
             unfrozen_address
         };
-        ////emits msg to handle;
+        emits msg to handle;
     }
 
     /// Returns if the account at `addr` is frozen.

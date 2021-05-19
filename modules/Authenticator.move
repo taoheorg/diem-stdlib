@@ -9,7 +9,7 @@ module Authenticator {
     use 0x1::Vector;
 
     /// A multi-ed25519 public key
-    struct MultiEd25519PublicKey {
+    struct MultiEd25519PublicKey has copy, drop, store {
         /// vector of ed25519 public keys
         public_keys: vector<vector<u8>>,
         /// approval threshold
@@ -89,8 +89,6 @@ module Authenticator {
         Hash::sha3_256(authentication_key_preimage)
     }
     spec fun multi_ed25519_authentication_key {
-        // TODO(refactoring): reactivate once loop invariants work again.
-        pragma verify = false;
         pragma opaque;
         aborts_if false;
         ensures [abstract] result == spec_multi_ed25519_authentication_key(k);

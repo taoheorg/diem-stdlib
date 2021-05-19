@@ -18,7 +18,7 @@ module DiemTimestamp {
     use 0x1::Errors;
 
     /// A singleton resource holding the current Unix time in microseconds
-    resource struct CurrentTimeMicroseconds {
+    struct CurrentTimeMicroseconds has key {
         microseconds: u64,
     }
 
@@ -46,7 +46,7 @@ module DiemTimestamp {
         /// context of Genesis execution.
         /// After time has started, all invariants guarded by `DiemTimestamp::is_operating`
         /// will become activated and need to hold.
-        //pragma friend = 0x1::Genesis::initialize;
+        pragma friend = 0x1::Genesis::initialize;
         include AbortsIfNotGenesis;
         include CoreAddresses::AbortsIfNotDiemRoot{account: dr_account};
         ensures is_operating();

@@ -12,7 +12,7 @@ module DiemConfig {
     use 0x1::Roles;
 
     /// A generic singleton resource that holds a value of a specific type.
-    resource struct DiemConfig<Config: copyable> {
+    struct DiemConfig<Config: copy + drop + store> has key, store {
         /// Holds specific info for instance of `Config` type.
         payload: Config
     }
@@ -20,12 +20,12 @@ module DiemConfig {
     /// Event that signals DiemBFT algorithm to start a new epoch,
     /// with new configuration information. This is also called a
     /// "reconfiguration event"
-    struct NewEpochEvent {
+    struct NewEpochEvent has drop, store {
         epoch: u64,
     }
 
     /// Holds information about state of reconfiguration
-    resource struct Configuration {
+    struct Configuration has key {
         /// Epoch number
         epoch: u64,
         /// Time of last reconfiguration. Only changes on reconfiguration events.
@@ -35,10 +35,10 @@ module DiemConfig {
     }
 
     /// Accounts with this privilege can modify DiemConfig<TypeName> under Diem root address.
-    resource struct ModifyConfigCapability<TypeName> {}
+    struct ModifyConfigCapability<TypeName> has key, store {}
 
     /// Reconfiguration disabled if this resource occurs under LibraRoot.
-    resource struct DisableReconfiguration {}
+    struct DisableReconfiguration has key {}
 
     /// The `Configuration` resource is in an invalid state
     const ECONFIGURATION: u64 = 0;
@@ -72,6 +72,7 @@ module DiemConfig {
         include InitializeAbortsIf;
         include InitializeEnsures;
         modifies global<Configuration>(CoreAddresses::DIEM_ROOT_ADDRESS());
+        modifies global<Event::EventHandleGenerator>(Signer::spec_address_of(dr_account));
     }
     spec schema InitializeAbortsIf {
         dr_account: signer;
@@ -88,7 +89,7 @@ module DiemConfig {
 
 
     /// Returns a copy of `Config` value stored under `addr`.
-    public fun get<Config: copyable>(): Config
+    public fun get<Config: copy + drop + store>(): Config
     acquires DiemConfig {
         let addr = CoreAddresses::DIEM_ROOT_ADDRESS();
         assert(exists<DiemConfig<Config>>(addr), Errors::not_published(EDIEM_CONFIG));
@@ -106,7 +107,7 @@ module DiemConfig {
     /// Set a config item to a new value with the default capability stored under config address and trigger a
     /// reconfiguration. This function requires that the signer have a `ModifyConfigCapability<Config>`
     /// resource published under it.
-    public fun set<Config: copyable>(account: &signer, payload: Config)
+    public fun set<Config: copy + drop + store>(account: &signer, payload: Config)
     acquires DiemConfig, Configuration {
         let signer_address = Signer::address_of(account);
         // Next should always be true if properly initialized.
@@ -124,6 +125,7 @@ module DiemConfig {
         /// generic type/specific invariant issue
         pragma opaque, verify = false;
         modifies global<Configuration>(CoreAddresses::DIEM_ROOT_ADDRESS());
+        modifies global<DiemConfig<Config>>(CoreAddresses::DIEM_ROOT_ADDRESS());
         include SetAbortsIf<Config>;
         include SetEnsures<Config>;
     }
@@ -151,7 +153,7 @@ module DiemConfig {
     /// It is called by `DiemSystem::update_config_and_reconfigure`, which allows
     /// validator operators to change the validator set.  All other config changes require
     /// a Diem root signer.
-    public fun set_with_capability_and_reconfigure<Config: copyable>(
+    public fun set_with_capability_and_reconfigure<Config: copy + drop + store>(
         _cap: &ModifyConfigCapability<Config>,
         payload: Config
     ) acquires DiemConfig, Configuration {
@@ -170,6 +172,7 @@ module DiemConfig {
         include ReconfigureAbortsIf;
         modifies global<DiemConfig<Config>>(CoreAddresses::DIEM_ROOT_ADDRESS());
         include SetEnsures<Config>;
+        include ReconfigureEmits;
     }
 
     /// Private function to temporarily halt reconfiguration.
@@ -205,11 +208,10 @@ module DiemConfig {
     /// The caller will use the returned ModifyConfigCapability to specify the access control
     /// policy for who can modify the config.
     /// Does not trigger a reconfiguration.
-    public fun publish_new_config_and_get_capability<Config: copyable>(
+    public fun publish_new_config_and_get_capability<Config: copy + drop + store>(
         dr_account: &signer,
         payload: Config,
     ): ModifyConfigCapability<Config> {
-        DiemTimestamp::assert_genesis();
         Roles::assert_diem_root(dr_account);
         assert(
             !exists<DiemConfig<Config>>(Signer::address_of(dr_account)),
@@ -223,7 +225,6 @@ module DiemConfig {
         /// generic type/specific invariant issue
         pragma opaque, verify = false;
         modifies global<DiemConfig<Config>>(CoreAddresses::DIEM_ROOT_ADDRESS());
-        include DiemTimestamp::AbortsIfNotGenesis;
         include Roles::AbortsIfNotDiemRoot{account: dr_account};
         include AbortsIfPublished<Config>;
         include SetEnsures<Config>;
@@ -235,7 +236,7 @@ module DiemConfig {
     /// Publish a new config item. Only Diem root can modify such config.
     /// Publishes the capability to modify this config under the Diem root account.
     /// Does not trigger a reconfiguration.
-    public fun publish_new_config<Config: copyable>(
+    public fun publish_new_config<Config: copy + drop + store>(
         dr_account: &signer,
         payload: Config
     ) {
@@ -255,7 +256,6 @@ module DiemConfig {
     }
     spec schema PublishNewConfigAbortsIf<Config> {
         dr_account: signer;
-        include DiemTimestamp::AbortsIfNotGenesis;
         include Roles::AbortsIfNotDiemRoot{account: dr_account};
         aborts_if spec_is_published<Config>();
         aborts_if exists<ModifyConfigCapability<Config>>(Signer::spec_address_of(dr_account));
@@ -282,7 +282,7 @@ module DiemConfig {
     }
 
     /// Private function to do reconfiguration.  Updates reconfiguration status resource
-    /// `Configuration` and ////emits a `NewEpochEvent`
+    /// `Configuration` and emits a `NewEpochEvent`
     fun reconfigure_() acquires Configuration {
         // Do not do anything if genesis has not finished.
         if (DiemTimestamp::is_genesis() || DiemTimestamp::now_microseconds() == 0 || !reconfiguration_enabled()) {
@@ -296,12 +296,12 @@ module DiemConfig {
         //
         // This is OK because:
         // - The time changes in every non-empty block
-        // - A block automatically ends after a transaction that ////emits a reconfiguration event, which is guaranteed by
+        // - A block automatically ends after a transaction that emits a reconfiguration event, which is guaranteed by
         //   DiemVM spec that all transactions comming after a reconfiguration transaction will be returned as Retry
         //   status.
         // - Each transaction must emit at most one reconfiguration event
         //
-        // Thus, this check ensures that a transaction that does multiple "reconfiguration required" actions ////emits only
+        // Thus, this check ensures that a transaction that does multiple "reconfiguration required" actions emits only
         // one reconfiguration event.
         //
         if (current_time == config_ref.last_reconfiguration_time) {
@@ -372,7 +372,7 @@ module DiemConfig {
             epoch: config.epoch,
         };
         let handle = config.events;
-        ////emits msg to handle if (!spec_reconfigure_omitted() && now != old(config).last_reconfiguration_time);
+        emits msg to handle if (!spec_reconfigure_omitted() && now != old(config).last_reconfiguration_time);
     }
 
     /// Emit a `NewEpochEvent` event. This function will be invoked by genesis directly to generate the very first
@@ -396,7 +396,7 @@ module DiemConfig {
         let msg = NewEpochEvent {
                 epoch: config.epoch,
         };
-        ////emits msg to handle;
+        emits msg to handle;
     }
 
     // =================================================================

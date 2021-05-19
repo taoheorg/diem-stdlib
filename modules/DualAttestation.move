@@ -17,7 +17,7 @@ module DualAttestation {
 
     /// This resource holds an entity's globally unique name and all of the metadata it needs to
     /// participate in off-chain protocols.
-    resource struct Credential {
+    struct Credential has key {
         /// The human readable name of this entity. Immutable.
         human_name: vector<u8>,
         /// The base_url holds the URL to be used for off-chain communication. This contains the
@@ -42,12 +42,12 @@ module DualAttestation {
     }
 
     /// Struct to store the limit on-chain
-    resource struct Limit {
+    struct Limit has key {
         micro_xdx_limit: u64,
     }
 
     /// The message sent whenever the compliance public key for a `DualAttestation` resource is rotated.
-    struct ComplianceKeyRotationEvent {
+    struct ComplianceKeyRotationEvent has drop, store {
         /// The new `compliance_public_key` that is being used for dual attestation checking.
         new_compliance_public_key: vector<u8>,
         /// The time at which the `compliance_public_key` was rotated
@@ -55,7 +55,7 @@ module DualAttestation {
     }
 
     /// The message sent whenever the base url for a `DualAttestation` resource is rotated.
-    struct BaseUrlRotationEvent {
+    struct BaseUrlRotationEvent has drop, store {
         /// The new `base_url` that is being used for dual attestation checking
         new_base_url: vector<u8>,
         /// The time at which the `base_url` was rotated
@@ -114,7 +114,7 @@ module DualAttestation {
         })
     }
     spec fun publish_credential {
-        /// The permission "RotateDualAttestationInfo" is granted to ParentVASP and DesignatedDealer [[H16]][PERMISSION].
+        /// The permission "RotateDualAttestationInfo" is granted to ParentVASP and DesignatedDealer [[H17]][PERMISSION].
         include Roles::AbortsIfNotParentVaspOrDesignatedDealer{account: created};
         include Roles::AbortsIfNotTreasuryCompliance{account: creator};
         aborts_if spec_has_credential(Signer::spec_address_of(created)) with Errors::ALREADY_PUBLISHED;
@@ -143,7 +143,7 @@ module DualAttestation {
         account: signer;
         let sender = Signer::spec_address_of(account);
 
-        /// Must abort if the account does not have the resource Credential [[H16]][PERMISSION].
+        /// Must abort if the account does not have the resource Credential [[H17]][PERMISSION].
         include AbortsIfNoCredential{addr: sender};
 
         include DiemTimestamp::AbortsIfNotOperating;
@@ -158,7 +158,7 @@ module DualAttestation {
         let sender = Signer::spec_address_of(account);
 
         ensures global<Credential>(sender).base_url == new_url;
-        /// The sender can only rotate its own base url [[H16]][PERMISSION].
+        /// The sender can only rotate its own base url [[H17]][PERMISSION].
         ensures forall addr1:address where addr1 != sender:
             global<Credential>(addr1).base_url == old(global<Credential>(addr1).base_url);
     }
@@ -171,7 +171,7 @@ module DualAttestation {
             new_base_url: new_url,
             time_rotated_seconds: DiemTimestamp::spec_now_seconds(),
         };
-        //emits msg to handle;
+        emits msg to handle;
     }
 
     /// Rotate the compliance public key for `account` to `new_key`.
@@ -200,7 +200,7 @@ module DualAttestation {
         new_key: vector<u8>;
 
         let sender = Signer::spec_address_of(account);
-        /// Must abort if the account does not have the resource Credential [[H16]][PERMISSION].
+        /// Must abort if the account does not have the resource Credential [[H17]][PERMISSION].
         include AbortsIfNoCredential{addr: sender};
 
         include DiemTimestamp::AbortsIfNotOperating;
@@ -212,7 +212,7 @@ module DualAttestation {
 
         let sender = Signer::spec_address_of(account);
         ensures global<Credential>(sender).compliance_public_key == new_key;
-        /// The sender only rotates its own compliance_public_key [[H16]][PERMISSION].
+        /// The sender only rotates its own compliance_public_key [[H17]][PERMISSION].
         ensures forall addr1: address where addr1 != sender:
             global<Credential>(addr1).compliance_public_key == old(global<Credential>(addr1).compliance_public_key);
     }
@@ -225,7 +225,7 @@ module DualAttestation {
             new_compliance_public_key: new_key,
             time_rotated_seconds: DiemTimestamp::spec_now_seconds(),
         };
-        //emits msg to handle;
+        emits msg to handle;
     }
 
     /// Return the human-readable name for the VASP account.
@@ -306,7 +306,7 @@ module DualAttestation {
     }
 
     /// Helper which returns true if dual attestion is required for a deposit.
-    fun dual_attestation_required<Token>(
+    fun dual_attestation_required<Token: store>(
         payer: address, payee: address, deposit_value: u64
     ): bool acquires Limit {
         // travel rule applies for payments over a limit
@@ -326,7 +326,7 @@ module DualAttestation {
             VASP::parent_address(payer) != VASP::parent_address(payee)
     }
     spec fun dual_attestation_required {
-        pragma opaque = true;
+        pragma opaque;
         include DualAttestationRequiredAbortsIf<Token>;
         ensures result == spec_dual_attestation_required<Token>(payer, payee, deposit_value);
     }
@@ -448,7 +448,7 @@ module DualAttestation {
     ///     published in `payee`'s `Credential` resource
     /// It aborts with an appropriate error code if dual attestation is required, but one or more of
     /// the conditions in (2) is not met.
-    public fun assert_payment_ok<Currency>(
+    public fun assert_payment_ok<Currency: store>(
         payer: address,
         payee: address,
         value: u64,
@@ -568,10 +568,10 @@ module DualAttestation {
                 !spec_has_credential(addr1);
     }
     spec module {
-        /// The permission "RotateDualAttestationInfo(addr)" is not transferred [[J16]][PERMISSION].
+        /// The permission "RotateDualAttestationInfo(addr)" is not transferred [[J17]][PERMISSION].
         apply PreserveCredentialExistence to *;
 
-        /// The permission "RotateDualAttestationInfo(addr)" is only granted to ParentVASP or DD [[H16]][PERMISSION].
+        /// The permission "RotateDualAttestationInfo(addr)" is only granted to ParentVASP or DD [[H17]][PERMISSION].
         /// "Credential" resources are only published under ParentVASP or DD accounts.
         apply PreserveCredentialAbsence to * except publish_credential;
         apply Roles::AbortsIfNotParentVaspOrDesignatedDealer{account: created} to publish_credential;
@@ -591,7 +591,7 @@ module DualAttestation {
         apply DualAttestationLimitRemainsSame to * except set_microdiem_limit;
     }
 
-    /// Only rotate_compliance_public_key can rotate the compliance public key [[H16]][PERMISSION].
+    /// Only rotate_compliance_public_key can rotate the compliance public key [[H17]][PERMISSION].
     spec schema CompliancePublicKeyRemainsSame {
         /// The compliance public key stays constant.
         ensures forall addr1: address where old(spec_has_credential(addr1)):
@@ -601,7 +601,7 @@ module DualAttestation {
         apply CompliancePublicKeyRemainsSame to * except rotate_compliance_public_key;
     }
 
-    /// Only rotate_base_url can rotate the base url [[H16]][PERMISSION].
+    /// Only rotate_base_url can rotate the base url [[H17]][PERMISSION].
     spec schema BaseURLRemainsSame {
         /// The base url stays constant.
         ensures forall addr1: address where old(spec_has_credential(addr1)):

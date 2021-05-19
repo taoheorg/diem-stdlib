@@ -8,14 +8,14 @@ module DiemBlock {
     use 0x1::DiemSystem;
     use 0x1::DiemTimestamp;
 
-    resource struct BlockMetadata {
+    struct BlockMetadata has key {
         /// Height of the current block
         height: u64,
         /// Handle where events with the time of new blocks are emitted
         new_block_events: Event::EventHandle<Self::NewBlockEvent>,
     }
 
-    struct NewBlockEvent {
+    struct NewBlockEvent has drop, store {
         round: u64,
         proposer: address,
         previous_block_votes: vector<address>,
@@ -61,7 +61,7 @@ module DiemBlock {
     /// Set the metadata for the current block.
     /// The runtime always runs this before executing the transactions in a block.
     fun block_prologue(
-        vm: &signer,
+        vm: signer,
         round: u64,
         timestamp: u64,
         previous_block_votes: vector<address>,
@@ -69,7 +69,7 @@ module DiemBlock {
     ) acquires BlockMetadata {
         DiemTimestamp::assert_operating();
         // Operational constraint: can only be invoked by the VM.
-        CoreAddresses::assert_vm(vm);
+        CoreAddresses::assert_vm(&vm);
 
         // Authorization
         assert(
@@ -78,7 +78,7 @@ module DiemBlock {
         );
 
         let block_metadata_ref = borrow_global_mut<BlockMetadata>(CoreAddresses::DIEM_ROOT_ADDRESS());
-        DiemTimestamp::update_global_time(vm, proposer, timestamp);
+        DiemTimestamp::update_global_time(&vm, proposer, timestamp);
         block_metadata_ref.height = block_metadata_ref.height + 1;
         Event::emit_event<NewBlockEvent>(
             &mut block_metadata_ref.new_block_events,
@@ -113,7 +113,7 @@ module DiemBlock {
             previous_block_votes,
             time_microseconds: timestamp,
         };
-        ////emits msg to handle;
+        emits msg to handle;
     }
 
     /// Get the current block height

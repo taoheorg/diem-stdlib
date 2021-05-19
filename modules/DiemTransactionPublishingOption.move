@@ -24,7 +24,7 @@ module DiemTransactionPublishingOption {
     /// 2. No module publishing, custom scripts are allowed.
     /// 3. Both module publishing and custom scripts are allowed.
     /// We represent these as the following resource.
-    struct DiemTransactionPublishingOption {
+    struct DiemTransactionPublishingOption has copy, drop, store {
         /// Only script hashes in the following list can be executed by the network. If the vector is empty, no
         /// limitation would be enforced.
         script_allow_list: vector<vector<u8>>,
@@ -33,7 +33,7 @@ module DiemTransactionPublishingOption {
     }
 
     /// If published, halts transactions from all accounts except DiemRoot
-    resource struct HaltAllTransactions {}
+    struct HaltAllTransactions has key {}
 
     public fun initialize(
         dr_account: &signer,
@@ -65,14 +65,13 @@ module DiemTransactionPublishingOption {
     /// Check if sender can execute script with `hash`
     public fun is_script_allowed(account: &signer, hash: &vector<u8>): bool {
         // DiemRoot can send any script
-        if (Roles::has_diem_root_role(account)) {
-            return true
-        };
+        if (Roles::has_diem_root_role(account)) return true;
 
         // No one except DiemRoot can send scripts when transactions are halted
-        if (transactions_halted()) {
-            return false
-        };
+        if (transactions_halted()) return false;
+
+        // The adapter passes an empty hash for script functions. All script functions are allowed
+        if (Vector::is_empty(hash)) return true;
 
         let publish_option = DiemConfig::get<DiemTransactionPublishingOption>();
         // allowlist empty = open publishing, anyone can send txes
@@ -81,7 +80,9 @@ module DiemTransactionPublishingOption {
             || Vector::contains(&publish_option.script_allow_list, hash)
     }
     spec fun is_script_allowed {
-        include !Roles::has_diem_root_role(account) && !transactions_halted() ==> DiemConfig::AbortsIfNotPublished<DiemTransactionPublishingOption>{};
+        include
+            !Roles::has_diem_root_role(account) && !transactions_halted() && !Vector::is_empty(hash)
+            ==> DiemConfig::AbortsIfNotPublished<DiemTransactionPublishingOption>{};
     }
     spec schema AbortsIfNoTransactionPublishingOption {
         include DiemTimestamp::is_genesis() ==> DiemConfig::AbortsIfNotPublished<DiemTransactionPublishingOption>{};
@@ -183,8 +184,10 @@ module DiemTransactionPublishingOption {
         define spec_is_script_allowed(account: signer, hash: vector<u8>): bool {
             let publish_option = DiemConfig::spec_get_config<DiemTransactionPublishingOption>();
             Roles::has_diem_root_role(account) || (!transactions_halted() && (
-            Vector::is_empty(publish_option.script_allow_list)
-                || Vector::spec_contains(publish_option.script_allow_list, hash)))
+                Vector::is_empty(hash) ||
+                    (Vector::is_empty(publish_option.script_allow_list)
+                        || Vector::spec_contains(publish_option.script_allow_list, hash))
+            ))
         }
 
         define spec_is_module_allowed(account: signer): bool {

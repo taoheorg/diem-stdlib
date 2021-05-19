@@ -16,7 +16,7 @@ module RecoveryAddress {
     /// rotation capabilities to a single `RecoveryAddress` resource stored under address A.
     /// The authentication key for A can be "buried in the mountain" and dug up only if the need to
     /// recover one of accounts in `rotation_caps` arises.
-    resource struct RecoveryAddress {
+    struct RecoveryAddress has key {
         rotation_caps: vector<KeyRotationCapability>
     }
 
@@ -129,8 +129,6 @@ module RecoveryAddress {
         abort Errors::invalid_argument(EACCOUNT_NOT_RECOVERABLE)
     }
     spec fun rotate_authentication_key {
-        // TODO(refactoring): re-enable once loop invariants are implemented.
-        pragma verify = false;
         include RotateAuthenticationKeyAbortsIf;
         include RotateAuthenticationKeyEnsures;
     }

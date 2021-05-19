@@ -18,7 +18,7 @@ module DiemSystem {
     use 0x1::DiemTimestamp;
 
     /// Information about a Validator Owner.
-    struct ValidatorInfo {
+    struct ValidatorInfo has copy, drop, store {
         /// The address (account) of the Validator Owner
         addr: address,
         /// The voting power of the Validator Owner (currently always 1).
@@ -39,7 +39,7 @@ module DiemSystem {
     /// modify the DiemSystem config. This is only needed by `update_config_and_reconfigure`.
     /// Only Diem root can add or remove a validator from the validator set, so the
     /// capability is not needed for access control in those functions.
-    resource struct CapabilityHolder {
+    struct CapabilityHolder has key {
         /// Holds a capability returned by `DiemConfig::publish_new_config_and_get_capability`
         /// which is called in `initialize_validator_set`.
         cap: ModifyConfigCapability<DiemSystem>,
@@ -48,7 +48,7 @@ module DiemSystem {
     /// The DiemSystem struct stores the validator set and crypto scheme in
     /// DiemConfig. The DiemSystem struct is stored by DiemConfig, which publishes a
     /// DiemConfig<DiemSystem> resource.
-    struct DiemSystem {
+    struct DiemSystem has copy, drop, store {
         /// The current consensus crypto scheme.
         scheme: u8,
         /// The current validator set.
@@ -135,7 +135,7 @@ module DiemSystem {
             exists<CapabilityHolder>(CoreAddresses::DIEM_ROOT_ADDRESS()),
             Errors::not_published(ECAPABILITY_HOLDER)
         );
-        // Updates the DiemConfig<DiemSystem> and ////emits a reconfigure event.
+        // Updates the DiemConfig<DiemSystem> and emits a reconfigure event.
         DiemConfig::set_with_capability_and_reconfigure<DiemSystem>(
             &borrow_global<CapabilityHolder>(CoreAddresses::DIEM_ROOT_ADDRESS()).cap,
             value
@@ -149,6 +149,7 @@ module DiemSystem {
         include DiemConfig::ReconfigureAbortsIf;
         /// `payload` is the only field of DiemConfig, so next completely specifies it.
         ensures global<DiemConfig::DiemConfig<DiemSystem>>(CoreAddresses::DIEM_ROOT_ADDRESS()).payload == value;
+        include DiemConfig::ReconfigureEmits;
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -195,6 +196,7 @@ module DiemSystem {
         modifies global<DiemConfig::DiemConfig<DiemSystem>>(CoreAddresses::DIEM_ROOT_ADDRESS());
         include AddValidatorAbortsIf;
         include AddValidatorEnsures;
+        include DiemConfig::ReconfigureEmits;
     }
     spec schema AddValidatorAbortsIf {
         dr_account: signer;
@@ -249,6 +251,7 @@ module DiemSystem {
         modifies global<DiemConfig::DiemConfig<DiemSystem>>(CoreAddresses::DIEM_ROOT_ADDRESS());
         include RemoveValidatorAbortsIf;
         include RemoveValidatorEnsures;
+        include DiemConfig::ReconfigureEmits;
     }
     spec schema RemoveValidatorAbortsIf {
         dr_account: signer;
@@ -270,7 +273,7 @@ module DiemSystem {
     /// Copy the information from ValidatorConfig into the validator set.
     /// This function makes no changes to the size or the members of the set.
     /// If the config in the ValidatorSet changes, it stores the new DiemSystem
-    /// and ////emits a reconfigurationevent.
+    /// and emits a reconfigurationevent.
     public fun update_config_and_reconfigure(
         validator_operator_account: &signer,
         validator_addr: address,
@@ -297,7 +300,9 @@ module DiemSystem {
     }
     spec fun update_config_and_reconfigure {
         pragma opaque;
-        pragma verify_duration_estimate = 100;
+        // TODO(timeout): this started timing out after recent refactoring. Investigate.
+        pragma verify = false;
+        modifies global<DiemConfig::Configuration>(CoreAddresses::DIEM_ROOT_ADDRESS());
         modifies global<DiemConfig::DiemConfig<DiemSystem>>(CoreAddresses::DIEM_ROOT_ADDRESS());
         include ValidatorConfig::AbortsIfGetOperator{addr: validator_addr};
         include UpdateConfigAndReconfigureAbortsIf;
@@ -314,21 +319,20 @@ module DiemSystem {
                 v_info.addr == validator_addr
                 && v_info.config != ValidatorConfig::spec_get_config(validator_addr));
         include is_validator_info_updated ==> DiemConfig::ReconfigureAbortsIf;
+        include UpdateConfigAndReconfigureEmits;
     }
     spec schema UpdateConfigAndReconfigureAbortsIf {
         validator_addr: address;
         validator_operator_account: signer;
         let validator_operator_addr = Signer::address_of(validator_operator_account);
         include DiemTimestamp::AbortsIfNotOperating;
-        /// Must abort if the signer does not have the ValidatorOperator role [[H14]][PERMISSION].
+        /// Must abort if the signer does not have the ValidatorOperator role [[H15]][PERMISSION].
         include Roles::AbortsIfNotValidatorOperator{validator_operator_addr: validator_operator_addr};
         include ValidatorConfig::AbortsIfNoValidatorConfig{addr: validator_addr};
         aborts_if ValidatorConfig::get_operator(validator_addr) != validator_operator_addr
             with Errors::INVALID_ARGUMENT;
         aborts_if !spec_is_validator(validator_addr) with Errors::INVALID_ARGUMENT;
     }
-
-
     /// Does not change the length of the validator set, only changes ValidatorInfo
     /// for validator_addr, and doesn't change any addresses.
     spec schema UpdateConfigAndReconfigureEnsures {
@@ -346,6 +350,15 @@ module DiemSystem {
                     vs[i].config == ValidatorConfig::get_config(validator_addr));
         /// DIP-6 property
         ensures Roles::spec_has_validator_role_addr(validator_addr);
+    }
+    spec schema UpdateConfigAndReconfigureEmits {
+        validator_addr: address;
+        let is_validator_info_updated =
+            ValidatorConfig::is_valid(validator_addr) &&
+            (exists v_info in spec_get_validators():
+                v_info.addr == validator_addr
+                && v_info.config != ValidatorConfig::spec_get_config(validator_addr));
+        include is_validator_info_updated ==> DiemConfig::ReconfigureEmits;
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -449,8 +462,6 @@ module DiemSystem {
         return Option::none()
     }
     spec fun get_validator_index_ {
-        // TODO(refactoring): re-enable once loop invariants are implemented.
-        pragma verify = false;
         pragma opaque;
         aborts_if false;
         let size = len(validators);
@@ -561,7 +572,7 @@ module DiemSystem {
     /// `update_config_and_reconfigure`.
 
     spec module {
-       /// The permission "{Add, Remove} Validator" is granted to DiemRoot [[H13]][PERMISSION].
+       /// The permission "{Add, Remove} Validator" is granted to DiemRoot [[H14]][PERMISSION].
        apply Roles::AbortsIfNotDiemRoot{account: dr_account} to add_validator, remove_validator;
     }
 
@@ -569,8 +580,8 @@ module DiemSystem {
         ensures spec_get_validators() == old(spec_get_validators());
     }
     spec module {
-        /// Only {add, remove} validator [[H13]][PERMISSION] and update_config_and_reconfigure
-        /// [[H14]][PERMISSION] may change the set of validators in the configuration.
+        /// Only {add, remove} validator [[H14]][PERMISSION] and update_config_and_reconfigure
+        /// [[H15]][PERMISSION] may change the set of validators in the configuration.
         /// `set_diem_system_config` is a private function which is only called by other
         /// functions in the "except" list. `initialize_validator_set` is only called in
         /// Genesis.

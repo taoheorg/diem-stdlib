@@ -10,7 +10,7 @@ module SlidingNonce {
     use 0x1::Signer;
     use 0x1::Errors;
 
-    resource struct SlidingNonce {
+    struct SlidingNonce has key {
         /// Minimum nonce in sliding window. All transactions with smaller
         /// nonces will be automatically rejected, since the window cannot
         /// tell whether they have been executed or not.
@@ -252,6 +252,7 @@ module SlidingNonce {
         pragma opaque, verify = false;
         ensures result == spec_try_record_nonce(account, seq_nonce);
         aborts_if !exists<SlidingNonce>(Signer::spec_address_of(account)) with Errors::NOT_PUBLISHED;
+        modifies global<SlidingNonce>(Signer::spec_address_of(account));
     }
 
     /// Specification version of `Self::try_record_nonce`.

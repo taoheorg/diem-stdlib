@@ -13,7 +13,7 @@ module XDX {
     use 0x1::DiemTimestamp;
 
     /// The type tag representing the `XDX` currency on-chain.
-    struct XDX { }
+    struct XDX has store { }
 
     /// Note: Currently only holds the mint, burn, and preburn capabilities for
     /// XDX. Once the makeup of the XDX has been determined this resource will
@@ -22,7 +22,7 @@ module XDX {
     /// The on-chain reserve for the `XDX` holds both the capability for minting `XDX`
     /// coins, and also each reserve component that holds the backing for these coins on-chain.
     /// Currently this holds no coins since XDX is not able to be minted/created.
-    resource struct Reserve {
+    struct Reserve has key {
         /// The mint capability allowing minting of `XDX` coins.
         mint_cap: Diem::MintCapability<XDX>,
         /// The burn capability for `XDX` coins. This is used for the unpacking
@@ -94,17 +94,18 @@ module XDX {
     }
 
     /// Returns true if `CoinType` is `XDX::XDX`
-    public fun is_xdx<CoinType>(): bool {
+    public fun is_xdx<CoinType: store>(): bool {
         Diem::is_currency<CoinType>() &&
             Diem::currency_code<CoinType>() == Diem::currency_code<XDX>()
     }
-
     spec fun is_xdx {
-        pragma opaque, verify = false;
+        pragma opaque;
         include Diem::spec_is_currency<CoinType>() ==> Diem::AbortsIfNoCurrency<XDX>;
-        /// The following is correct because currency codes are unique; however, we
-        /// can currently not prove it, therefore verify is false.
-        ensures result == Diem::spec_is_currency<CoinType>() && spec_is_xdx<CoinType>();
+        ensures result == spec_is_xdx<CoinType>();
+    }
+    spec define spec_is_xdx<CoinType>(): bool {
+        Diem::spec_is_currency<CoinType>() && Diem::spec_is_currency<XDX>() &&
+            (Diem::spec_currency_code<CoinType>() == Diem::spec_currency_code<XDX>())
     }
 
     /// Return the account address where the globally unique XDX::Reserve resource is stored
@@ -132,11 +133,6 @@ module XDX {
         /// Checks whether the Reserve resource exists.
         define reserve_exists(): bool {
            exists<Reserve>(CoreAddresses::CURRENCY_INFO_ADDRESS())
-        }
-
-        /// Returns true if CoinType is XDX.
-        define spec_is_xdx<CoinType>(): bool {
-            type<CoinType>() == type<XDX>()
         }
 
         /// After genesis, `LimitsDefinition<XDX>` is published at Diem root. It's published by
