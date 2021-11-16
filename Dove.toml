@@ -1,7 +1,0 @@
-[package]
-name = "diem-stdlib"
-dialect = "diem"
-account_address = "0x2f66c09143acc52a85fec529a4e20c85"
-dependencies = [
-    { git = "https://github.com/taoheorg/move-stdlib", rev="94f4878bfbd3d031914617598f43858d6b8bc1a3" }
-]
