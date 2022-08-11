@@ -1,9 +1,11 @@
-# Diem's Standard Library
-[Dove](https://github.com/pontem-network/move-tools) compatible repository containing [Diem's Standard Library](https://github.com/diem/diem/tree/release-1.5/language/diem-framework) version 1.5.0 (WIP).
+# Not Maintained
+## Will be removed later
 
-See documentation at [doc/overview.md](doc/overview.md).
-
-## Legal
-Diem's Standard Library in [sources/](sources/) is copyrighted by the Diem Association, and licenced under [Apache-2.0 License](https://github.com/diem/diem/blob/main/LICENSE).
-
-This repository is third party software (maintained by *Solarius Intellectual Properties Ky*), and not affiliated with the Diem Association.
+From now on, use the following in your `Move.toml`:
+```
+[dependencies.MoveStdlib]
+git = "https://github.com/move-language/move.git"
+rev = "b53bb030b556a4e6ac2728d50ec7baaddf0b9a56"
+subdir = "language/move-stdlib"
+addr_subst = { "std" = "0x1" }
+```
